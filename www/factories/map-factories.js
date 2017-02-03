@@ -71,7 +71,8 @@ angular.module('pvta.factories')
   function addKML (fileName) {
     var toAdd = 'https://bustracker.pvta.com/infopoint/Resources/Traces/' + fileName;
     var georssLayer = new google.maps.KmlLayer({
-      url: toAdd
+      url: toAdd,
+      suppressInfoWindows: true
     });
     georssLayer.setMap(map);
   }
