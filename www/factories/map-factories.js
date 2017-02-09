@@ -1,6 +1,6 @@
 angular.module('pvta.factories')
 
-.factory('Map', function ($cordovaGeolocation, $ionicPopup) {
+.factory('Map', function ($cordovaGeolocation, $ionicPopup, StopsForage) {
 
   var map;
   var currentLocation;
@@ -89,7 +89,58 @@ angular.module('pvta.factories')
     }
   }
 
+  /*
+   * Calculates the distance between the user and every stop in some list of stops.
+   * @param stopList: Array<Stop> - the list of Avail Stop objects
+   * @param position: Object - the current location
+   */
+  function calculateStopDistances (stopList, previousPosition, position) {
+    if (position) {
+      var currentPosition = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      };
+      // If this is the first time we've gotten the user's position OR
+      // we already gotten a position but they've since moved more than
+      // 100m (.1km) from it, we calculate their distance from every stop.
+      // We use the haversine formula here because it's more accurate
+      // the standard Distance Formula.
+      if (!previousPosition || (previousPosition !== undefined && (haversine(previousPosition, currentPosition) > .1))) {
+        var msg = 'Current position found, but no previous position or has moved; calculating stop distances.';
+        ga('send', 'event', 'CalculatingStopDistances',
+          'RoutesAndStopsController.calculateStopDistances', msg);
+        console.log(msg);
+
+        for (var i = 0; i < stopList.length; i++) {
+          var stop = stopList[i];
+          // Use the well-known Distance Formula, aka
+          // the "square root of the sum of squares"
+          // to calculate distance to each stop.
+          // 2x faster than haversine (less accurate), so
+          // we take the speed, since we're doing it ~2000 times.
+          var lats = Math.pow(stop.Latitude - position.coords.latitude, 2);
+          var lons = Math.pow(stop.Longitude - position.coords.longitude, 2);
+          // Distance is a float, representing degrees from our current location
+          var newDistance = Math.sqrt(lats + lons);
+          stop.Distance = newDistance;
+        }
+      }
+      // Regardless of whether we need to recalculate stop distances,
+      // we still have the user's location.
+      previousPosition = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude
+      };
+    }
+    // Finally, regardless of whether we have their location,
+    // we want to save the stop list.
+    StopsForage.save(stopList);
+    return { stopList: stopList, previousPosition: previousPosition };
+  }
+
+
   return {
+    calculateStopDistances: calculateStopDistances,
     removeAllMarkers: removeAllMarkers,
     showInsecureOriginLocationPopup: showInsecureOriginLocationPopup,
     getCurrentPosition: getCurrentPosition,

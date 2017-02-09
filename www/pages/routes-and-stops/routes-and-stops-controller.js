@@ -183,60 +183,7 @@ angular.module('pvta.controllers').controller('RoutesAndStopsController', functi
       }
     });
   };
- /*
-  * Calculates the distance between the user and every PVTA stop.
-  * @param position: Object - the current location
-  */
-  function calculateStopDistances (position) {
-    if (position) {
-      var currentPosition = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude
-      };
-      // If this is the first time we've gotten the user's position OR
-      // we already gotten a position but they've since moved more than
-      // 100m (.1km) from it, we calculate their distance from every stop.
-      // We use the haversine formula here because it's more accurate
-      // the standard Distance Formula.
-      if (!previousPosition || (previousPosition !== undefined && (haversine(previousPosition, currentPosition) > .1))) {
-        var msg = 'Current position found, but no previous position or has moved; calculating stop distances.';
-        ga('send', 'event', 'CalculatingStopDistances',
-          'RoutesAndStopsController.calculateStopDistances', msg);
-        console.log(msg);
-
-        for (var i = 0; i < $scope.stops.length; i++) {
-          var stop = $scope.stops[i];
-          // Use the well-known Distance Formula, aka
-          // the "square root of the sum of squares"
-          // to calculate distance to each stop.
-          // 2x faster than haversine (less accurate), so
-          // we take the speed, since we're doing it ~2000 times.
-          var lats = Math.pow(stop.Latitude - position.coords.latitude, 2);
-          var lons = Math.pow(stop.Longitude - position.coords.longitude, 2);
-          // Distance is a float, representing degrees from our current location
-          var newDistance = Math.sqrt(lats + lons);
-          stop.Distance = newDistance;
-        }
-      }
-      // Regardless of whether we need to recalculate stop distances,
-      // we still have the user's location.
-      $scope.noLocation = false;
-      stopOrder = 'distance';
-      previousPosition = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude
-      };
-    }
-    // If we don't have their location, tell them!
-    else if (!position) {
-      $scope.noLocation = true;
-      stopOrder = 'favorites';
-    }
-    // Finally, regardless of whether we have their location,
-    // we want to save the stop list.
-    StopsForage.save($scope.stops);
-  }
-  /*
+   /*
    * Switches between the ways Routes and Stops can be ordered.
    * Takes no params because the <select> is bound to a model - $scope.order.
    */
@@ -333,6 +280,14 @@ angular.module('pvta.controllers').controller('RoutesAndStopsController', functi
     $scope.display($scope.currentDisplay);
   }
 
+  function finalPositionCallback (stopsWithDistances, haveCurrentLocation) {
+    $scope.stops = stopsWithDistances.stopList;
+    previousPosition = stopsWithDistances.previousPosition;
+    $scope.noLocation = !haveCurrentLocation;
+    haveCurrentLocation ? stopOrder = 'distance' : stopOrder = 'favorites';
+    redraw();
+  }
+
   $scope.$on('$ionicView.enter', function () {
     // Load the list of routes - do this every time
     // because we need to update the "heart" for each one.
@@ -345,12 +300,12 @@ angular.module('pvta.controllers').controller('RoutesAndStopsController', functi
       getFavoriteStops($scope.stops);
       // Grab the current location
       Map.getCurrentPosition().then(function (position) {
-        calculateStopDistances(position);
-        redraw();
+        var distances = Map.calculateStopDistances($scope.stops, previousPosition, position);
+        finalPositionCallback(distances, true);
       }, function (error) {
         Map.showInsecureOriginLocationPopup(error);
-        calculateStopDistances();
-        redraw();
+        var distances = Map.calculateStopDistances($scope.stops, previousPosition, position);
+        finalPositionCallback(distances, false);
         // No location? Log and report.
         console.error('No location. Code: ' + error.code + '\n' +
           'message: ' + error.message + '\n');
